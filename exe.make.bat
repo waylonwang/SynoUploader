@@ -1,0 +1,1 @@
+pyinstaller SynoUploader.onefile.spec

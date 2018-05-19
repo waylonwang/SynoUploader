@@ -1,0 +1,1 @@
+python3 setup.app.py py2app

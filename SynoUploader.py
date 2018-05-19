@@ -2,13 +2,27 @@
 # !python
 import configparser
 import os
+import platform
+import sys
 import zipfile
 from threading import Thread
 
+import time
 import wx
 from wx.lib.pubsub import pub
 
 from synology import filestation, utils
+
+
+def resource_path(relative_path):
+    """ Get absolute path to resource, works for dev and for PyInstaller """
+    base_path = getattr(sys, '_MEIPASS', os.path.dirname(os.path.abspath(__file__)))
+    return os.path.join(base_path, relative_path)
+
+
+def real_path(relative_path):
+    base_path = os.path.split(os.path.realpath(__file__))[0]
+    return os.path.join(base_path, relative_path)
 
 
 class UploadThread(Thread):
@@ -52,12 +66,12 @@ class UploadThread(Thread):
 
         wx.CallAfter(pub.sendMessage, "update", msg = '正在解压文件')
         task = fs.extract(self.data['remote_file_path'], self.data['remote'])
-        taskwait = fs.waitForTaskFinished(task["taskid"])
+        taskwait = fs.waitForTaskFinished(task["taskid"],timeout = int(self.data['task_timeout']))
 
         if taskwait['success']:
             wx.CallAfter(pub.sendMessage, "update", msg = '正在清除远程临时文件')
             task = fs.delete(self.data['remote_file_path'])
-            fs.waitForTaskFinished(task["taskid"], timeout = 30)
+            fs.waitForTaskFinished(task["taskid"], timeout = int(self.data['task_timeout']))
         else:
             wx.CallAfter(pub.sendMessage, "update", msg = '解压等待超时')
 
@@ -76,17 +90,18 @@ class MainFrame(wx.Frame):
 
     def __init__(self):
         wx.Frame.__init__(self, None, -1, "群晖NAS文件夹上传助手", pos = wx.DefaultPosition, size = wx.Size(500, 260))
-        self.SetSizeHints(wx.DefaultSize, wx.Size(500, 260))
+        # self.SetSizeHints(wx.DefaultSize, wx.Size(500, 260))
         panel = wx.Panel(self)
         # 1 创建窗口部件
         self.topLbl = wx.StaticText(panel, -1, "群晖NAS", )
-        self.topLbl.SetFont(wx.Font(18, wx.SWISS, wx.NORMAL, wx.BOLD))
+        self.topLbl.SetFont(wx.Font(18, wx.SWISS, wx.NORMAL, wx.BOLD, faceName = 'Microsoft YaHei UI'))
         self.statusLbl = wx.StaticText(panel, -1, "就绪", size = (150, -1), style = wx.ALIGN_RIGHT)
         self.statusLbl.SetForegroundColour("Gray")
 
         hostLbl = wx.StaticText(panel, -1, "服务器:")
         hostLbl.SetForegroundColour("Gray")
-        self.host = wx.TextCtrl(panel, -1, "", size = (150, -1));
+        self.host = wx.TextCtrl(panel, -1, "", size = (350, -1));
+        self.host.SetMinSize(wx.Size(350, -1))
         portLbl = wx.StaticText(panel, -1, "端口:", size = (50, -1), style = wx.ALIGN_RIGHT)
         portLbl.SetForegroundColour("Gray")
         self.port = wx.TextCtrl(panel, -1, "", size = (70, -1));
@@ -172,6 +187,7 @@ class MainFrame(wx.Frame):
         mainSizer.Add(btnSizer, 0, wx.EXPAND | wx.BOTTOM, 10)
 
         panel.SetSizer(mainSizer)
+        mainSizer.Fit(self)
 
         # 3 绑定事件
         self.Bind(wx.EVT_SHOW, self.OnShow)
@@ -194,20 +210,24 @@ class MainFrame(wx.Frame):
             self.cf.set("server", "passwd", self.passwd.GetValue())
             self.cf.set("path", "local", self.local.GetValue())
             self.cf.set("path", "remote", self.remote.GetValue())
-            self.cf.set("path", "filename", self.fn)
-            self.cf.write(open("setting.cfg", "w"))
+            self.cf.set("upload", "filename", self.fn)
+            self.cf.write(open(real_path("setting.cfg"), "w"))
         except:
             pass
 
     def readConf(self):
         try:
-            self.cf.read("setting.cfg")
+            if platform.system() == 'Windows' and not os.path.isfile('setting.cfg'):
+                os.system('copy %s %s' % (resource_path('setting.cfg'), real_path('setting.cfg')))
+
+            self.cf.read(real_path("setting.cfg"))
             self.host.SetValue(self.cf.get("server", "host"))
             self.port.SetValue(self.cf.get("server", "port"))
             self.user.SetValue(self.cf.get("server", "user"))
             self.passwd.SetValue(self.cf.get("server", "passwd"))
             self.local.SetValue(self.cf.get("path", "local"))
             self.remote.SetValue(self.cf.get("path", "remote"))
+            self.task_timeout = self.cf.get("upload", "tasktimeout")
         except:
             pass
 
@@ -226,7 +246,8 @@ class MainFrame(wx.Frame):
             'remote': self.remote.GetValue(),
             'filename': self.fn,
             'local_file_path': '%s/%s.zip' % (os.path.dirname(self.local.GetValue()), self.fn),
-            'remote_file_path': '%s/%s.zip' % (self.remote.GetValue(), self.fn)
+            'remote_file_path': '%s/%s.zip' % (self.remote.GetValue(), self.fn),
+            'task_timeout': self.task_timeout
         }
         UploadThread(data)
         self.statusLbl.SetLabel('开始执行')
@@ -293,9 +314,9 @@ class NASDialog(wx.Dialog):
 
         il = wx.ImageList(16, 16)
 
-        root_icon = wx.Icon('icons/nas.png', wx.BITMAP_TYPE_PNG, 16, 16)
-        forder_icon = wx.Icon('icons/folder.png', wx.BITMAP_TYPE_PNG, 16, 16)
-        shareforder_icon = wx.Icon('icons/sharefolder.png', wx.BITMAP_TYPE_PNG, 16, 16)
+        root_icon = wx.Icon(resource_path('icons/nas.png'), wx.BITMAP_TYPE_PNG, 16, 16)
+        forder_icon = wx.Icon(resource_path('icons/folder.png'), wx.BITMAP_TYPE_PNG, 16, 16)
+        shareforder_icon = wx.Icon(resource_path('icons/sharefolder.png'), wx.BITMAP_TYPE_PNG, 16, 16)
 
         self.rootidx = il.Add(root_icon)
         self.fldridx = il.Add(forder_icon)
@@ -393,7 +414,6 @@ class NASDialog(wx.Dialog):
     def OnSelChanged(self, e):
         folders = self.fs.list(self.GetItemPath(e.GetItem()), filetype = 'dir')
         self.AddTreeNodes(e.GetItem(), [f['name'] for f in folders['files']])
-
 
     def OnClose(self, e):
         self.Close(True)
