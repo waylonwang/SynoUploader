@@ -31,7 +31,7 @@ def real_path(relative_path):
     return os.path.join(base_path, relative_path)
 
 
-def generate_key(len: int = 32, lowercase: bool = True, uppercase: bool = True, digits: bool = True) -> str:
+def generate_key(len = 32, lowercase = True, uppercase = True, digits = True) :
     random.seed()
     chars = ''
     if lowercase: chars += string.ascii_lowercase
@@ -106,6 +106,7 @@ class MainFrame(wx.Frame):
     def __init__(self):
         wx.Frame.__init__(self, None, -1, "%s %s" % (appName, version), pos = wx.DefaultPosition,
                           size = wx.Size(500, 260))
+
         panel = wx.Panel(self)
 
         about_icon = wx.Image('icons/about.png', wx.BITMAP_TYPE_PNG).ConvertToBitmap()
@@ -280,6 +281,7 @@ class MainFrame(wx.Frame):
     def OnAbout(self, e):
         dlg = AboutDialog()
         dlg.ShowModal()
+        dlg.Destroy()
 
     def OnServerOrPortText(self, e):
         self.topLbl.SetLabelText('群晖NAS:%s%s%s' % (self.host.GetValue(),
@@ -417,6 +419,9 @@ class NASDialog(wx.Dialog):
         return self.GetItemPath(self.tree.GetSelection())
 
     def GetShareFolder(self):
+        if self.fs is None:
+            return
+
         shareFolders = self.fs.list_share()
 
         root = self.tree.AddRoot('群晖NAS[%s%s%s]' % (self.fs.host,
@@ -443,66 +448,61 @@ class NASDialog(wx.Dialog):
 class AboutDialog(wx.Dialog):
     def __init__(self):
         wx.Dialog.__init__(self, None, title = "关于", size = (400, 300))
-        panel = wx.Panel(self)
 
         app_icon = wx.Image('icons/SynoUploader_small.png', wx.BITMAP_TYPE_PNG).ConvertToBitmap()
 
-        appImg = wx.StaticBitmap(panel, -1, app_icon)
-        nameLbl = wx.StaticText(panel, -1, appName)
+        appImg = wx.StaticBitmap(self, -1, app_icon)
+        nameLbl = wx.StaticText(self, -1, appName)
         nameLbl.SetFont(wx.Font(18, wx.SWISS, wx.NORMAL, wx.BOLD, faceName = 'Microsoft YaHei UI'))
-        versionLbl = wx.StaticText(panel, -1, version)
+        versionLbl = wx.StaticText(self, -1, version)
         versionLbl.SetFont(wx.Font(16, wx.SWISS, wx.NORMAL, wx.BOLD, faceName = 'Microsoft YaHei UI'))
         versionLbl.SetForegroundColour("Gray")
 
-        authorLbl = wx.StaticText(panel, -1, "作者: %s (%s)" % (author, email))
+        authorLbl = wx.StaticText(self, -1, "作者: %s (%s)" % (author, email))
         authorLbl.SetForegroundColour("Gray")
 
-        infoLbl = wx.StaticText(panel, -1, "%s帮助用户把本地文件夹通过压缩打包方式上传到群晖NAS共享文件夹中，并自动对打"
+        infoLbl = wx.StaticText(self, -1, "%s帮助用户把本地文件夹通过压缩打包方式上传到群晖NAS共享文件夹中，并自动对打"
                                            "包的文件进行解压和清理\n\n"
                                            "通过%s可以解决有很多小文件需要上传群晖NAS服务器时速度过慢的问题，例如Axure"
                                            "生成的原型HTML演示文件需要上传到群晖NAS服务器" % (appName, appName), size = (360, 160))
         infoLbl.SetForegroundColour("Gray")
 
-        copyrightLbl = wx.StaticText(panel, -1, "版权声明：%s是自由软件，源代码采用MIT许可证开源并发布于Github项目"
-                                                "waylonwang/SynoUploader，SynoUploader源代码使用了"
-                                                "Synology FileStation OpenAPI及"
-                                                "Githubn项目satreix/synology的部分代码" % appName, size = (360, 40),
+        copyrightLbl = wx.StaticText(self, -1, "版权声明：%s是自由软件，源代码采用MIT许可证开源，开源项目发布于Github："
+                                                "waylonwang/SynoUploader" % appName, size = (360, 30),
                                      style = wx.ALIGN_BOTTOM)
         copyrightLbl.SetFont(wx.Font(10, wx.SWISS, wx.NORMAL, wx.NORMAL, faceName = 'Microsoft YaHei UI'))
 
-        closeBtn = wx.Button(panel, -1, "关闭")
-        closeBtn.SetId(wx.ID_CANCEL)
+        closeBtn = wx.Button(self, label="关闭")
+        closeBtn.SetId(wx.ID_OK)
 
-        mainSizer = wx.BoxSizer(wx.VERTICAL)
+
         topSizer = wx.BoxSizer(wx.HORIZONTAL)
         topSizer.Add(appImg, 0, wx.TOP | wx.LEFT, 10)
-
-        authorSizer = wx.BoxSizer(wx.VERTICAL)
 
         versionSizer = wx.BoxSizer(wx.HORIZONTAL)
         versionSizer.Add(nameLbl)
         versionSizer.Add(versionLbl, 0, wx.TOP | wx.LEFT, 3)
-        authorSizer.Add(versionSizer)
 
+        authorSizer = wx.BoxSizer(wx.VERTICAL)
+        authorSizer.Add(versionSizer)
         authorSizer.Add(authorLbl)
 
         topSizer.Add(authorSizer, 0, wx.TOP | wx.RIGHT, 13)
 
+        mainSizer = wx.BoxSizer(wx.VERTICAL)
         mainSizer.Add(topSizer, 0, wx.EXPAND, 5)
-        mainSizer.Add(wx.StaticLine(panel), 0, wx.EXPAND | wx.TOP | wx.BOTTOM, 5)
+        mainSizer.Add(wx.StaticLine(self), 0, wx.EXPAND | wx.TOP | wx.BOTTOM, 5)
 
-        mainSizer.Add(infoLbl, 0, wx.EXPAND | wx.ALL, 10)
-        mainSizer.Add(copyrightLbl, 0, wx.EXPAND | wx.ALL, 10)
+        mainSizer.Add(infoLbl, 0, wx.EXPAND | wx.ALL , 10)
+        mainSizer.Add(copyrightLbl, 1, wx.EXPAND | wx.ALL, 10)
 
         btnSizer = wx.BoxSizer(wx.HORIZONTAL)
-        btnSizer.Add((20, 20), 1)
         btnSizer.Add(closeBtn)
-        btnSizer.Add((20, 20), 1)
-        mainSizer.Add(btnSizer, 0, wx.EXPAND | wx.BOTTOM, 10)
 
-        panel.SetSizer(mainSizer)
+        mainSizer.Add(btnSizer,
+                      flag = wx.ALIGN_CENTER | wx.TOP | wx.BOTTOM, border = 10)
+
         mainSizer.Fit(self)
-
         self.SetSizer(mainSizer)
         self.SetBackgroundColour('#F6F6F6')
 
