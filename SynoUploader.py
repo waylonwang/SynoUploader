@@ -31,7 +31,7 @@ def init_logger():
     fh.setLevel(logging.INFO)
 
     fmt = "%(asctime)-15s %(levelname)s %(filename)s #%(lineno)d : %(message)s"
-    datefmt = "[%Y-%M-%d %H:%M:%S]"
+    datefmt = "[%Y-%m-%d %H:%M:%S]"
     formatter = logging.Formatter(fmt, datefmt)
 
     fh.setFormatter(formatter)
@@ -288,7 +288,7 @@ class MainFrame(wx.Frame):
 
     def OnSubmit(self, e):
         logger.info('开始提交')
-        self.fn = 'syno_uploader_' + utils.generate_key(8, True, False, False)
+        self.fn = 'syno_uploader_' + generate_key(8, True, False, False)
         self.writeConf()
         data = {
             'host': self.host.GetValue(),
