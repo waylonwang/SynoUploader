@@ -27,7 +27,7 @@ def init_logger():
     logger.setLevel(logging.ERROR)
 
     log_path = "./%s.log" % appName
-    fh = logging.FileHandler(log_path)
+    fh = logging.FileHandler(resource_path(log_path))
     fh.setLevel(logging.INFO)
 
     fmt = "%(asctime)-15s %(levelname)s %(filename)s #%(lineno)d : %(message)s"
