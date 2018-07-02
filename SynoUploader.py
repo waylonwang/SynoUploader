@@ -1,6 +1,7 @@
 # coding=utf-8
 # !python
 import configparser
+import logging
 import os
 import platform
 import random
@@ -10,14 +11,32 @@ import zipfile
 from threading import Thread
 
 import wx
-from wx.lib.pubsub import pub
-
 from synology import filestation, utils
+from wx.lib.pubsub import pub
 
 appName = 'SynoUploader'
 version = 'V1.0'
 author = 'waylon wang'
 email = 'waylon@waylon.wang'
+
+logger = None
+
+def init_logger():
+    global logger
+    logger = logging.getLogger(appName)
+    logger.setLevel(logging.ERROR)
+
+    log_path = "./%s.log" % appName
+    fh = logging.FileHandler(log_path)
+    fh.setLevel(logging.INFO)
+
+    fmt = "%(asctime)-15s %(levelname)s %(filename)s #%(lineno)d : %(message)s"
+    datefmt = "[%Y-%M-%d %H:%M:%S]"
+    formatter = logging.Formatter(fmt, datefmt)
+
+    fh.setFormatter(formatter)
+    logger.addHandler(fh)
+
 
 
 def resource_path(relative_path):
@@ -31,7 +50,7 @@ def real_path(relative_path):
     return os.path.join(base_path, relative_path)
 
 
-def generate_key(len = 32, lowercase = True, uppercase = True, digits = True) :
+def generate_key(len = 32, lowercase = True, uppercase = True, digits = True):
     random.seed()
     chars = ''
     if lowercase: chars += string.ascii_lowercase
@@ -43,11 +62,13 @@ def generate_key(len = 32, lowercase = True, uppercase = True, digits = True) :
 class UploadThread(Thread):
     def __init__(self, data):
         # 线程实例化时立即启动
+        logger.info('启动上传线程')
         Thread.__init__(self)
         self.data = data
         self.start()
 
     def compressLocalFolder(self):
+        logger.info('压缩本地文件夹')
         wx.CallAfter(pub.sendMessage, "update", msg = '正在压缩本地文件夹')
 
         zipf = zipfile.ZipFile(self.data['local_file_path'], 'w')
@@ -60,34 +81,41 @@ class UploadThread(Thread):
         zipf.close()
 
     def deleteLocalFile(self):
+        logger.info('清除本地临时文件')
         wx.CallAfter(pub.sendMessage, "update", msg = '正在清除本地临时文件')
         os.remove(self.data['local_file_path'])
 
     def uploadFile(self):
+        logger.info('登录')
         wx.CallAfter(pub.sendMessage, "update", msg = '正在登录')
         fs = filestation.FileStation(self.data['host'],
                                      self.data['user'],
                                      self.data['passwd'],
                                      self.data['port'])
         if not fs.logged_in:
+            logger.info('登录失败')
             wx.CallAfter(pub.sendMessage, "update", msg = '登录失败')
             wx.CallAfter(pub.sendMessage, "loginErr")
             return
 
         self.compressLocalFolder()
 
+        logger.info('上传文件')
         wx.CallAfter(pub.sendMessage, "update", msg = '正在上传文件')
         fs.upload(self.data['remote_file_path'], self.data['local_file_path'])
 
+        logger.info('解压文件')
         wx.CallAfter(pub.sendMessage, "update", msg = '正在解压文件')
         task = fs.extract(self.data['remote_file_path'], self.data['remote'])
         taskwait = fs.waitForTaskFinished(task["taskid"], timeout = int(self.data['task_timeout']))
 
         if taskwait['success']:
+            logger.info('清除远程临时文件')
             wx.CallAfter(pub.sendMessage, "update", msg = '正在清除远程临时文件')
             task = fs.delete(self.data['remote_file_path'])
             fs.waitForTaskFinished(task["taskid"], timeout = int(self.data['task_timeout']))
         else:
+            logger.info('解压等待超时')
             wx.CallAfter(pub.sendMessage, "update", msg = '解压等待超时')
 
         self.deleteLocalFile()
@@ -104,13 +132,15 @@ class MainFrame(wx.Frame):
     local_filename = ''
 
     def __init__(self):
+        logger.info('主窗体初始化')
         wx.Frame.__init__(self, None, -1, "%s %s" % (appName, version), pos = wx.DefaultPosition,
                           size = wx.Size(500, 260))
 
         panel = wx.Panel(self)
 
-        about_icon = wx.Image('icons/about.png', wx.BITMAP_TYPE_PNG).ConvertToBitmap()
+        about_icon = wx.Image(resource_path('icons/about.png'), wx.BITMAP_TYPE_PNG).ConvertToBitmap()
 
+        logger.info('创建窗口部件')
         # 1 创建窗口部件
         self.topLbl = wx.StaticText(panel, -1, "群晖NAS", )
         self.topLbl.SetFont(wx.Font(18, wx.SWISS, wx.NORMAL, wx.BOLD, faceName = 'Microsoft YaHei UI'))
@@ -222,6 +252,7 @@ class MainFrame(wx.Frame):
         pub.subscribe(self.updateStatus, "update")
         pub.subscribe(self.activeSubmit, "finish")
         pub.subscribe(self.LoginAlert, "loginErr")
+        logger.info('主窗体初始化完成')
 
     def writeConf(self):
         try:
@@ -234,7 +265,7 @@ class MainFrame(wx.Frame):
             self.cf.set("upload", "filename", self.fn)
             self.cf.write(open(real_path("setting.cfg"), "w"))
         except:
-            pass
+            logger.error('写入配置文件错误')
 
     def readConf(self):
         try:
@@ -250,12 +281,13 @@ class MainFrame(wx.Frame):
             self.remote.SetValue(self.cf.get("path", "remote"))
             self.task_timeout = self.cf.get("upload", "tasktimeout")
         except:
-            pass
+            logger.error('读取配置文件错误')
 
     def OnShow(self, e):
         self.readConf()
 
     def OnSubmit(self, e):
+        logger.info('开始提交')
         self.fn = 'syno_uploader_' + utils.generate_key(8, True, False, False)
         self.writeConf()
         data = {
@@ -273,6 +305,7 @@ class MainFrame(wx.Frame):
         UploadThread(data)
         self.statusLbl.SetLabel('开始执行')
         e.GetEventObject().Disable()
+
 
     def OnClose(self, e):
         self.Close(True)
@@ -319,6 +352,7 @@ class MainFrame(wx.Frame):
         self.submitBtn.Enable(True)
 
     def LoginAlert(self):
+        logger.info('登录失败')
         msg = wx.MessageDialog(None, "未能成功登录群晖NAS,请检查配置项是否输入错误！",
                                '登录失败',
                                wx.OK | wx.ICON_WARNING)
@@ -328,6 +362,7 @@ class MainFrame(wx.Frame):
 
 class NASDialog(wx.Dialog):
     def __init__(self, filestation):
+        logger.info('远程文件夹选择窗体初始化')
         wx.Dialog.__init__(self, None, title = "远程文件夹选择", size = (400, 500))
         self.fs = filestation
         panel = wx.Panel(self)
@@ -447,9 +482,10 @@ class NASDialog(wx.Dialog):
 
 class AboutDialog(wx.Dialog):
     def __init__(self):
+        logger.info('关于窗体初始化')
         wx.Dialog.__init__(self, None, title = "关于", size = (400, 300))
 
-        app_icon = wx.Image('icons/SynoUploader_small.png', wx.BITMAP_TYPE_PNG).ConvertToBitmap()
+        app_icon = wx.Image(resource_path('icons/SynoUploader_small.png'), wx.BITMAP_TYPE_PNG).ConvertToBitmap()
 
         appImg = wx.StaticBitmap(self, -1, app_icon)
         nameLbl = wx.StaticText(self, -1, appName)
@@ -462,19 +498,18 @@ class AboutDialog(wx.Dialog):
         authorLbl.SetForegroundColour("Gray")
 
         infoLbl = wx.StaticText(self, -1, "%s帮助用户把本地文件夹通过压缩打包方式上传到群晖NAS共享文件夹中，并自动对打"
-                                           "包的文件进行解压和清理\n\n"
-                                           "通过%s可以解决有很多小文件需要上传群晖NAS服务器时速度过慢的问题，例如Axure"
-                                           "生成的原型HTML演示文件需要上传到群晖NAS服务器" % (appName, appName), size = (360, 160))
+                                          "包的文件进行解压和清理\n\n"
+                                          "通过%s可以解决有很多小文件需要上传群晖NAS服务器时速度过慢的问题，例如Axure"
+                                          "生成的原型HTML演示文件需要上传到群晖NAS服务器" % (appName, appName), size = (360, 160))
         infoLbl.SetForegroundColour("Gray")
 
         copyrightLbl = wx.StaticText(self, -1, "版权声明：%s是自由软件，源代码采用MIT许可证开源，开源项目发布于Github："
-                                                "waylonwang/SynoUploader" % appName, size = (360, 30),
+                                               "waylonwang/SynoUploader" % appName, size = (360, 30),
                                      style = wx.ALIGN_BOTTOM)
         copyrightLbl.SetFont(wx.Font(10, wx.SWISS, wx.NORMAL, wx.NORMAL, faceName = 'Microsoft YaHei UI'))
 
-        closeBtn = wx.Button(self, label="关闭")
+        closeBtn = wx.Button(self, label = "关闭")
         closeBtn.SetId(wx.ID_OK)
-
 
         topSizer = wx.BoxSizer(wx.HORIZONTAL)
         topSizer.Add(appImg, 0, wx.TOP | wx.LEFT, 10)
@@ -493,7 +528,7 @@ class AboutDialog(wx.Dialog):
         mainSizer.Add(topSizer, 0, wx.EXPAND, 5)
         mainSizer.Add(wx.StaticLine(self), 0, wx.EXPAND | wx.TOP | wx.BOTTOM, 5)
 
-        mainSizer.Add(infoLbl, 0, wx.EXPAND | wx.ALL , 10)
+        mainSizer.Add(infoLbl, 0, wx.EXPAND | wx.ALL, 10)
         mainSizer.Add(copyrightLbl, 1, wx.EXPAND | wx.ALL, 10)
 
         btnSizer = wx.BoxSizer(wx.HORIZONTAL)
@@ -506,7 +541,7 @@ class AboutDialog(wx.Dialog):
         self.SetSizer(mainSizer)
         self.SetBackgroundColour('#F6F6F6')
 
-
+init_logger()
 app = wx.App()
 MainFrame().Show()
 app.MainLoop()
